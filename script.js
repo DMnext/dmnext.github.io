@@ -1,6 +1,6 @@
 /* ============================================
    DMlabs Portfolio — Main Script
-   Theme toggle, search, mobile menu, sidebar sliver & resize
+   Theme toggle, search, left sidebar fullscreen/small toggle
    ============================================ */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -60,373 +60,267 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // --- Elements for Sidebar & Interactions ---
+  // --- Sidebar & Two-State Management (Fullscreen vs Small side bar) ---
   const sidebar = document.getElementById('sidebar');
-  const dragHandle = document.getElementById('sidebar-drag-handle');
+  const sidebarHandle = document.getElementById('sidebar-handle');
   const sidebarClose = document.getElementById('sidebar-close');
   const sidebarOverlay = document.getElementById('sidebar-overlay');
   const hamburger = document.getElementById('hamburger');
-  const mainContent = document.getElementById('main-content');
 
-  const SLIVER_WIDTH = 34; // px peeking on right edge in small screen
-  const DEFAULT_DESKTOP_WIDTH = 300;
-  const MIN_DESKTOP_WIDTH = 260;
+  const SLIVER_WIDTH = 34; // px visible on mobile in small sidebar state
 
   function isSmallScreen() {
     return window.innerWidth < 1024;
   }
 
-  let isSidebarOpen = false;
+  // Is currently in fullscreen mode
+  let isFullscreen = false;
 
-  // --- Open / Close functions for Mobile / Small Screen ---
-  function openSidebarMobile() {
-    isSidebarOpen = true;
-    sidebar.classList.add('open');
+  function enterFullscreen() {
+    isFullscreen = true;
+    sidebar.classList.add('fullscreen', 'open');
     sidebar.style.transform = '';
     sidebarOverlay.classList.add('active');
     sidebarOverlay.style.opacity = '1';
     document.body.style.overflow = 'hidden';
-    dragHandle.setAttribute('title', 'Press or slide right to return to original size');
-    dragHandle.setAttribute('aria-label', 'Return to original size');
+    if (sidebarHandle) {
+      sidebarHandle.setAttribute('title', 'Return to small side bar');
+      sidebarHandle.setAttribute('aria-label', 'Return to small side bar');
+    }
+    window.dispatchEvent(new Event('resize'));
   }
 
-  function closeSidebarMobile() {
-    isSidebarOpen = false;
-    sidebar.classList.remove('open');
+  function exitFullscreen() {
+    isFullscreen = false;
+    sidebar.classList.remove('fullscreen', 'open');
     sidebar.style.transform = '';
     sidebarOverlay.classList.remove('active');
     sidebarOverlay.style.opacity = '';
     document.body.style.overflow = '';
-    dragHandle.setAttribute('title', 'Press or slide left to open full screen');
-    dragHandle.setAttribute('aria-label', 'Open full screen');
-  }
-
-  // --- Desktop Width functions ---
-  function getDesktopWidth() {
-    return sidebar.getBoundingClientRect().width;
-  }
-
-  function setDesktopWidth(width) {
-    const maxWidth = window.innerWidth;
-    const clamped = Math.max(MIN_DESKTOP_WIDTH, Math.min(width, maxWidth));
-    sidebar.style.width = clamped + 'px';
-    mainContent.style.marginRight = clamped + 'px';
-    document.documentElement.style.setProperty('--sidebar-width', clamped + 'px');
-
-    if (clamped >= maxWidth - 15) {
-      sidebar.classList.add('full-screen');
-    } else {
-      sidebar.classList.remove('full-screen');
+    if (sidebarHandle) {
+      sidebarHandle.setAttribute('title', 'Expand to fullscreen');
+      sidebarHandle.setAttribute('aria-label', 'Expand to fullscreen');
     }
-
     window.dispatchEvent(new Event('resize'));
   }
 
-  function restoreOriginalSize() {
-    if (isSmallScreen()) {
-      closeSidebarMobile();
+  function toggleSidebarState() {
+    if (isFullscreen) {
+      exitFullscreen();
     } else {
-      // Desktop: restore to saved or default width
-      const saved = parseInt(localStorage.getItem('dm-sidebar-width'), 10) || DEFAULT_DESKTOP_WIDTH;
-      const targetWidth = (saved >= window.innerWidth - 20) ? DEFAULT_DESKTOP_WIDTH : saved;
-      setDesktopWidth(targetWidth);
-      localStorage.setItem('dm-sidebar-width', targetWidth);
+      enterFullscreen();
     }
   }
 
-  // --- Close button handler (Works for both mobile and desktop full-screen) ---
+  // Handle click / tap on the sidebar edge handle
+  let didSlide = false;
+
+  if (sidebarHandle) {
+    sidebarHandle.addEventListener('click', (e) => {
+      // Prevent handling if a drag just ended
+      if (didSlide) return;
+      toggleSidebarState();
+    });
+
+    // Keyboard accessibility (Enter / Space)
+    sidebarHandle.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggleSidebarState();
+      }
+    });
+  }
+
+  // Close button always restores to small side bar
   if (sidebarClose) {
     sidebarClose.addEventListener('click', (e) => {
       e.stopPropagation();
-      restoreOriginalSize();
+      exitFullscreen();
     });
   }
 
-  // --- Overlay click handler ---
+  // Overlay click restores to small side bar
   if (sidebarOverlay) {
     sidebarOverlay.addEventListener('click', () => {
-      restoreOriginalSize();
+      exitFullscreen();
     });
   }
 
-  // --- Hamburger button handler ---
+  // Hamburger button toggles state
   if (hamburger) {
     hamburger.addEventListener('click', () => {
-      if (isSmallScreen()) {
-        if (isSidebarOpen) {
-          closeSidebarMobile();
-        } else {
-          openSidebarMobile();
-        }
-      }
+      toggleSidebarState();
     });
   }
 
-  // --- Navigation links close on mobile ---
+  // Nav links close fullscreen on small screen
   sidebar.querySelectorAll('.sidebar-nav a').forEach(link => {
     link.addEventListener('click', () => {
-      if (isSmallScreen()) closeSidebarMobile();
+      if (isSmallScreen() && isFullscreen) {
+        exitFullscreen();
+      }
     });
   });
 
-  // --- Keyboard (Escape key) to restore ---
+  // Escape key exits fullscreen
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      if (isSmallScreen() && isSidebarOpen) {
-        closeSidebarMobile();
-      } else if (!isSmallScreen() && sidebar.classList.contains('full-screen')) {
-        restoreOriginalSize();
-      }
+    if (e.key === 'Escape' && isFullscreen) {
+      exitFullscreen();
     }
   });
 
   // ============================================
-  // Pointer / Touch / Drag handling on the handle
+  // Sliding Gesture Handler (Snaps strictly to Fullscreen or Small side bar)
   // ============================================
-  let isPointerActive = false;
+  let isPointerDown = false;
   let startX = 0;
   let startY = 0;
   let startTime = 0;
-  let startDesktopWidth = 0;
-  let hasMovedFarEnough = false;
 
-  function onPointerDown(e) {
-    // Only primary button or touch
+  function onSlideStart(e) {
     if (e.button !== undefined && e.button !== 0) return;
-
-    isPointerActive = true;
-    hasMovedFarEnough = false;
-    startX = e.clientX;
-    startY = e.clientY;
+    isPointerDown = true;
+    didSlide = false;
+    startX = e.clientX || (e.touches && e.touches[0].clientX);
+    startY = e.clientY || (e.touches && e.touches[0].clientY);
     startTime = performance.now();
 
-    if (!isSmallScreen()) {
-      startDesktopWidth = getDesktopWidth();
-    }
-
-    sidebar.classList.add('dragging');
-    dragHandle.classList.add('active');
-
     try {
-      dragHandle.setPointerCapture(e.pointerId);
+      sidebarHandle.setPointerCapture(e.pointerId);
     } catch (_) {}
-
-    e.preventDefault();
   }
 
-  function onPointerMove(e) {
-    if (!isPointerActive) return;
+  function onSlideMove(e) {
+    if (!isPointerDown) return;
 
-    const deltaX = e.clientX - startX;
-    const deltaY = e.clientY - startY;
+    const currentX = e.clientX || (e.touches && e.touches[0].clientX);
+    const currentY = e.clientY || (e.touches && e.touches[0].clientY);
+    const deltaX = currentX - startX;
+    const deltaY = currentY - startY;
 
-    if (!hasMovedFarEnough && (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4)) {
-      hasMovedFarEnough = true;
-      if (!isSmallScreen()) {
-        document.body.classList.add('sidebar-resizing');
+    if (!didSlide && (Math.abs(deltaX) > 8 || Math.abs(deltaY) > 8)) {
+      // Check if primary movement is horizontal
+      if (Math.abs(deltaX) > Math.abs(deltaY)) {
+        didSlide = true;
+        sidebar.classList.add('sliding');
       }
     }
 
-    if (!hasMovedFarEnough) return;
+    if (!didSlide) return;
 
+    // Mobile / small screen slide preview
     if (isSmallScreen()) {
-      // Mobile / Small resolution sliding:
-      const maxOffset = window.innerWidth - SLIVER_WIDTH; // position when collapsed
-      let currentOffset;
-
-      if (!isSidebarOpen) {
-        // Was collapsed: sliding left (deltaX is negative) brings it onto screen
-        currentOffset = maxOffset + deltaX;
+      const maxOffset = window.innerWidth - SLIVER_WIDTH;
+      let offset;
+      if (!isFullscreen) {
+        // Dragging right (positive deltaX) expands the left sidebar
+        offset = -maxOffset + deltaX;
       } else {
-        // Was open (full screen): sliding right (deltaX is positive) moves it off
-        currentOffset = deltaX;
+        // Dragging left (negative deltaX) collapses the left sidebar
+        offset = deltaX;
       }
-
-      // Clamp offset between 0 (full screen) and maxOffset (sliver)
-      const clampedOffset = Math.max(0, Math.min(currentOffset, maxOffset));
+      const clampedOffset = Math.min(0, Math.max(-maxOffset, offset));
       sidebar.style.transform = `translateX(${clampedOffset}px)`;
 
-      // Progress: 0 = sliver, 1 = full screen
-      const progress = 1 - (clampedOffset / maxOffset);
+      const progress = (clampedOffset + maxOffset) / maxOffset;
       sidebarOverlay.classList.add('active');
-      sidebarOverlay.style.opacity = Math.max(0, Math.min(progress, 1)).toString();
-    } else {
-      // Desktop resize: dragging left increases width
-      const newWidth = startDesktopWidth - deltaX;
-      setDesktopWidth(newWidth);
+      sidebarOverlay.style.opacity = Math.max(0, Math.min(1, progress)).toString();
     }
   }
 
-  function onPointerUp(e) {
-    if (!isPointerActive) return;
+  function onSlideEnd(e) {
+    if (!isPointerDown) return;
+    isPointerDown = false;
 
-    isPointerActive = false;
-    const elapsed = performance.now() - startTime;
-    const deltaX = e.clientX - startX;
+    const currentX = (e.clientX !== undefined) ? e.clientX : ((e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0].clientX : startX);
+    const deltaX = currentX - startX;
 
-    sidebar.classList.remove('dragging');
-    dragHandle.classList.remove('active');
-    document.body.classList.remove('sidebar-resizing');
+    sidebar.classList.remove('sliding');
 
     try {
-      dragHandle.releasePointerCapture(e.pointerId);
+      sidebarHandle.releasePointerCapture(e.pointerId);
     } catch (_) {}
 
-    if (isSmallScreen()) {
-      // Check if this was a press / tap (quick, minimal movement)
-      if (!hasMovedFarEnough || (Math.abs(deltaX) < 10 && elapsed < 350)) {
-        // Toggle state!
-        if (isSidebarOpen) {
-          closeSidebarMobile();
+    if (didSlide) {
+      // Was a slide gesture: decide snap target
+      if (!isFullscreen) {
+        // From small sidebar: user dragged rightwards
+        if (deltaX > 45) {
+          enterFullscreen();
         } else {
-          openSidebarMobile();
-        }
-        return;
-      }
-
-      // It was a drag / slide gesture
-      const maxOffset = window.innerWidth - SLIVER_WIDTH;
-      const velocity = deltaX / Math.max(elapsed, 1); // px per ms
-
-      if (!isSidebarOpen) {
-        // Started from sliver, dragging left
-        // If dragged left past 25% of distance OR flicked left
-        if (deltaX < -40 || deltaX < -maxOffset * 0.25 || velocity < -0.3) {
-          openSidebarMobile();
-        } else {
-          closeSidebarMobile();
+          exitFullscreen();
         }
       } else {
-        // Started from open, dragging right
-        // If dragged right past 40px or flicked right
-        if (deltaX > 40 || deltaX > maxOffset * 0.25 || velocity > 0.3) {
-          closeSidebarMobile();
+        // From fullscreen: user dragged leftwards
+        if (deltaX < -45) {
+          exitFullscreen();
         } else {
-          openSidebarMobile();
+          enterFullscreen();
         }
       }
-    } else {
-      // Desktop: persist width
-      const finalWidth = getDesktopWidth();
-      localStorage.setItem('dm-sidebar-width', finalWidth);
+      // Reset didSlide flag after brief delay so click doesn't re-toggle
+      setTimeout(() => { didSlide = false; }, 60);
     }
   }
 
-  dragHandle.addEventListener('pointerdown', onPointerDown);
-  dragHandle.addEventListener('pointermove', onPointerMove);
-  dragHandle.addEventListener('pointerup', onPointerUp);
-  dragHandle.addEventListener('pointercancel', onPointerUp);
+  if (sidebarHandle) {
+    sidebarHandle.addEventListener('pointerdown', onSlideStart);
+    sidebarHandle.addEventListener('pointermove', onSlideMove);
+    sidebarHandle.addEventListener('pointerup', onSlideEnd);
+    sidebarHandle.addEventListener('pointercancel', onSlideEnd);
+  }
 
-  // Fallback click on dragHandle for accessibility (e.g. keyboard Enter or Space)
-  dragHandle.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      if (isSmallScreen()) {
-        if (isSidebarOpen) closeSidebarMobile();
-        else openSidebarMobile();
-      }
-    }
-  });
-
-  // Double-click on desktop to toggle full-width / default width
-  dragHandle.addEventListener('dblclick', () => {
-    if (isSmallScreen()) return;
-
-    const currentWidth = getDesktopWidth();
-    const fullWidth = window.innerWidth;
-
-    if (currentWidth >= fullWidth - 20) {
-      // Restore to default
-      setDesktopWidth(DEFAULT_DESKTOP_WIDTH);
-      localStorage.setItem('dm-sidebar-width', DEFAULT_DESKTOP_WIDTH);
-    } else {
-      // Expand to full screen
-      setDesktopWidth(fullWidth);
-      localStorage.setItem('dm-sidebar-width', fullWidth);
-    }
-  });
-
-  // Swipe-to-close on mobile when touch originates inside sidebar
+  // Swipe inside sidebar when in fullscreen on mobile
   let touchStartX = 0;
   let touchStartY = 0;
-  let isSwipingSidebar = false;
+  let isSwiping = false;
 
   sidebar.addEventListener('touchstart', (e) => {
-    if (!isSmallScreen() || !isSidebarOpen) return;
+    if (!isFullscreen) return;
     touchStartX = e.touches[0].clientX;
     touchStartY = e.touches[0].clientY;
-    isSwipingSidebar = false;
+    isSwiping = false;
   }, { passive: true });
 
   sidebar.addEventListener('touchmove', (e) => {
-    if (!isSmallScreen() || !isSidebarOpen) return;
-    const currentX = e.touches[0].clientX;
-    const currentY = e.touches[0].clientY;
-    const deltaX = currentX - touchStartX;
-    const deltaY = currentY - touchStartY;
+    if (!isFullscreen) return;
+    const deltaX = e.touches[0].clientX - touchStartX;
+    const deltaY = e.touches[0].clientY - touchStartY;
 
-    // Detect horizontal swipe to the right
-    if (!isSwipingSidebar && deltaX > 15 && deltaX > Math.abs(deltaY) * 1.5) {
-      isSwipingSidebar = true;
-      sidebar.classList.add('dragging');
+    if (!isSwiping && deltaX < -15 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+      isSwiping = true;
+      sidebar.classList.add('sliding');
     }
 
-    if (isSwipingSidebar && deltaX > 0) {
+    if (isSwiping && deltaX < 0) {
       const maxOffset = window.innerWidth - SLIVER_WIDTH;
-      const clampedOffset = Math.min(deltaX, maxOffset);
+      const clampedOffset = Math.max(-maxOffset, deltaX);
       sidebar.style.transform = `translateX(${clampedOffset}px)`;
-
-      const progress = 1 - (clampedOffset / maxOffset);
+      const progress = (clampedOffset + maxOffset) / maxOffset;
       sidebarOverlay.style.opacity = Math.max(0, progress).toString();
     }
   }, { passive: true });
 
   sidebar.addEventListener('touchend', (e) => {
-    if (!isSmallScreen() || !isSidebarOpen || !isSwipingSidebar) return;
-    sidebar.classList.remove('dragging');
-    isSwipingSidebar = false;
+    if (!isFullscreen || !isSwiping) return;
+    sidebar.classList.remove('sliding');
+    isSwiping = false;
+    const deltaX = e.changedTouches[0].clientX - touchStartX;
 
-    const endX = e.changedTouches[0].clientX;
-    const deltaX = endX - touchStartX;
-
-    if (deltaX > 50) {
-      closeSidebarMobile();
+    // Swiping left in fullscreen collapses back to small sidebar
+    if (deltaX < -50) {
+      exitFullscreen();
     } else {
-      openSidebarMobile();
+      enterFullscreen();
     }
   }, { passive: true });
 
-  // --- Initial Desktop State & Window Resize ---
-  if (!isSmallScreen()) {
-    const savedWidth = localStorage.getItem('dm-sidebar-width');
-    if (savedWidth) {
-      setDesktopWidth(parseInt(savedWidth, 10));
-    }
-  }
-
-  let wasSmall = isSmallScreen();
+  // Handle window resizing
   window.addEventListener('resize', () => {
-    const currentlySmall = isSmallScreen();
-    if (currentlySmall && !wasSmall) {
-      // Switched to small screen: reset inline desktop styles
-      sidebar.style.width = '';
-      sidebar.style.transform = '';
-      mainContent.style.marginRight = '';
-      sidebar.classList.remove('full-screen');
-      if (isSidebarOpen) {
-        openSidebarMobile();
-      } else {
-        closeSidebarMobile();
-      }
-    } else if (!currentlySmall && wasSmall) {
-      // Switched to desktop: reset mobile classes & restore desktop width
+    if (!isSmallScreen() && !isFullscreen) {
       sidebar.style.transform = '';
       sidebarOverlay.classList.remove('active');
-      sidebarOverlay.style.opacity = '';
       document.body.style.overflow = '';
-      const savedWidth = localStorage.getItem('dm-sidebar-width') || DEFAULT_DESKTOP_WIDTH;
-      setDesktopWidth(parseInt(savedWidth, 10));
     }
-    wasSmall = currentlySmall;
   });
 });

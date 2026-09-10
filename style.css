@@ -33,12 +33,11 @@
   --overlay-bg: rgba(0, 0, 0, 0.6);
   --scrollbar-track: #111827;
   --scrollbar-thumb: #1e3a30;
-  --drag-handle-color: rgba(0, 201, 167, 0.25);
-  --drag-handle-hover: rgba(0, 201, 167, 0.5);
+  --handle-color: rgba(0, 201, 167, 0.2);
+  --handle-hover: rgba(0, 201, 167, 0.45);
 
   /* Sizing */
   --sidebar-width: 300px;
-  --sidebar-min-width: 260px;
   --sliver-width: 34px;
   --header-height: 60px;
   --border-radius: 14px;
@@ -78,8 +77,8 @@
   --overlay-bg: rgba(0, 0, 0, 0.3);
   --scrollbar-track: #e2e8f0;
   --scrollbar-thumb: #a0d8cc;
-  --drag-handle-color: rgba(13, 148, 136, 0.2);
-  --drag-handle-hover: rgba(13, 148, 136, 0.45);
+  --handle-color: rgba(13, 148, 136, 0.2);
+  --handle-hover: rgba(13, 148, 136, 0.4);
 }
 
 /* --- Reset & Base --- */
@@ -117,11 +116,14 @@ a:hover { color: var(--accent-light); }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
 
 /* ============================================ Layout */
-.layout { display: flex; min-height: 100vh; }
+.layout { display: flex; min-height: 100vh; position: relative; }
+
+/* Main Content Area (Margin on the LEFT for sidebar) */
 .main-content {
   flex: 1;
-  margin-right: var(--sidebar-width);
-  transition: margin 0.05s linear;
+  margin-left: var(--sidebar-width);
+  margin-right: 0;
+  transition: margin var(--transition);
 }
 
 /* ============================================ Header / Top Bar */
@@ -138,7 +140,7 @@ a:hover { color: var(--accent-light); }
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--header-border);
-  transition: background var(--transition), border-color var(--transition);
+  transition: background var(--transition), border-color var(--transition), padding var(--transition);
 }
 
 .theme-toggle {
@@ -200,7 +202,7 @@ a:hover { color: var(--accent-light); }
   box-shadow: 0 0 0 3px rgba(0, 201, 167, 0.08);
 }
 
-/* Hamburger (mobile) */
+/* Hamburger (mobile on left) */
 .hamburger {
   display: none;
   align-items: center;
@@ -217,10 +219,11 @@ a:hover { color: var(--accent-light); }
 .hamburger:hover { color: var(--icon-hover); background: var(--search-bg); }
 .hamburger svg { width: 22px; height: 22px; }
 
-/* ============================================ Sidebar */
+/* ============================================ Sidebar (LEFT SIDE) */
 .sidebar {
   position: fixed;
-  right: 0; top: 0; bottom: 0;
+  left: 0; top: 0; bottom: 0;
+  right: auto;
   width: var(--sidebar-width);
   background: var(--sidebar-gradient);
   display: flex;
@@ -232,11 +235,18 @@ a:hover { color: var(--accent-light); }
   transition: background var(--transition-slow), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), width 0.35s cubic-bezier(0.16, 1, 0.3, 1);
   overflow-y: auto;
   overflow-x: hidden;
-  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.25);
+  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.25);
 }
 
-/* Disable smooth transition while user is dragging */
-.sidebar.dragging {
+/* Fullscreen Mode */
+.sidebar.fullscreen {
+  width: 100vw !important;
+  z-index: 250;
+  box-shadow: 0 0 50px rgba(0, 0, 0, 0.6);
+}
+
+/* Suppress transition during active gesture slide */
+.sidebar.sliding {
   transition: none !important;
 }
 
@@ -249,15 +259,17 @@ a:hover { color: var(--accent-light); }
   width: 100%;
 }
 
-/* --- Drag Handle & Sliver Strip --- */
-.sidebar-drag-handle {
+/* --- Toggle / Sliver Strip on RIGHT EDGE of sidebar --- */
+.sidebar-handle {
   position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 8px;
-  cursor: col-resize;
-  background: var(--drag-handle-color);
+  right: 0; top: 0; bottom: 0;
+  left: auto;
+  width: 22px;
+  cursor: pointer;
+  background: var(--handle-color);
+  border-right: 2px solid transparent;
   z-index: 210;
-  transition: background var(--transition), width var(--transition);
+  transition: background var(--transition), width var(--transition), border-color var(--transition);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -266,35 +278,15 @@ a:hover { color: var(--accent-light); }
   -webkit-user-select: none;
 }
 
-.sidebar-drag-handle:hover,
-.sidebar-drag-handle.active {
-  width: 12px;
-  background: var(--drag-handle-hover);
-}
-
-/* Desktop grab notch */
-.sidebar-drag-handle::after {
-  content: '';
-  width: 2px;
-  height: 36px;
-  border-radius: 1px;
-  background: rgba(255,255,255,0.3);
-  transition: height var(--transition);
-}
-
-.sidebar-drag-handle:hover::after,
-.sidebar-drag-handle.active::after {
-  height: 52px;
-  background: var(--accent);
-}
-
-[data-theme="light"] .sidebar-drag-handle::after {
-  background: rgba(0,0,0,0.25);
+.sidebar-handle:hover {
+  width: 28px;
+  background: var(--handle-hover);
+  border-right-color: var(--accent);
 }
 
 /* Sliver pill indicator (chevron + grip dots) */
 .sliver-pill {
-  display: none;
+  display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -312,18 +304,20 @@ a:hover { color: var(--accent-light); }
   transition: transform var(--transition), color var(--transition);
 }
 
+/* Small sidebar: arrow points right (expand) */
 .sliver-arrow.icon-expand {
   display: block;
 }
-
 .sliver-arrow.icon-collapse {
   display: none;
 }
 
+/* Fullscreen: arrow points left (collapse) */
+.sidebar.fullscreen .sliver-arrow.icon-expand,
 .sidebar.open .sliver-arrow.icon-expand {
   display: none;
 }
-
+.sidebar.fullscreen .sliver-arrow.icon-collapse,
 .sidebar.open .sliver-arrow.icon-collapse {
   display: block;
 }
@@ -342,13 +336,6 @@ a:hover { color: var(--accent-light); }
   background: var(--accent);
   opacity: 0.75;
   transition: opacity var(--transition), background var(--transition);
-}
-
-/* Prevent text selection while dragging the sidebar */
-body.sidebar-resizing {
-  user-select: none;
-  -webkit-user-select: none;
-  cursor: col-resize;
 }
 
 .brand-monogram {
@@ -461,13 +448,14 @@ body.sidebar-resizing {
 }
 .social-links a svg { width: 18px; height: 18px; }
 
+/* Close / Restore button */
 .sidebar-close {
   display: none;
   position: absolute;
-  top: 16px; right: 16px;
+  top: 16px; right: 24px;
   width: 38px; height: 38px;
   border: none;
-  background: rgba(255,255,255,0.08);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--text-secondary);
   border-radius: 50%;
   cursor: pointer;
@@ -483,8 +471,9 @@ body.sidebar-resizing {
 }
 .sidebar-close svg { width: 20px; height: 20px; }
 
-/* Desktop full-screen display for close button */
-.sidebar.full-screen .sidebar-close {
+/* Show close button when in fullscreen or open on mobile */
+.sidebar.fullscreen .sidebar-close,
+.sidebar.open .sidebar-close {
   display: flex;
 }
 
@@ -513,6 +502,7 @@ body.sidebar-resizing {
   aspect-ratio: 1 / 1;
   position: relative;
   cursor: grab;
+  touch-action: none;
 }
 .canvas-container:active { cursor: grabbing; }
 .canvas-container canvas {
@@ -707,81 +697,70 @@ body.sidebar-resizing {
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes sliverPulse {
+@keyframes sliverPulseLeft {
   0%, 100% {
-    border-left-color: var(--accent);
-    box-shadow: -3px 0 12px rgba(0, 201, 167, 0.25);
+    border-right-color: var(--accent);
+    box-shadow: 3px 0 12px rgba(0, 201, 167, 0.25);
   }
   50% {
-    border-left-color: var(--accent-light);
-    box-shadow: -6px 0 22px rgba(94, 234, 212, 0.5);
+    border-right-color: var(--accent-light);
+    box-shadow: 6px 0 22px rgba(94, 234, 212, 0.5);
   }
 }
 
 /* ============================================ Responsive — Tablet & Mobile (< 1024px) */
 @media (max-width: 1023px) {
   .main-content {
+    margin-left: 0 !important;
     margin-right: 0 !important;
   }
 
   .top-bar {
-    padding-right: calc(var(--sliver-width) + 12px);
+    padding-left: calc(var(--sliver-width) + 12px);
+    padding-right: 16px;
   }
 
-  /* Sidebar sits as a small sliver on the right side by default */
+  /* Sidebar sits as a small sliver on the LEFT side by default */
   .sidebar {
     position: fixed;
-    right: 0; top: 0; bottom: 0;
+    left: 0; top: 0; bottom: 0;
+    right: auto;
     width: 100vw !important;
     max-width: 100vw;
-    /* Translate right so only --sliver-width remains visible on the right edge */
-    transform: translateX(calc(100% - var(--sliver-width))) !important;
-    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.45);
+    /* Translate left so only --sliver-width remains visible on the left edge */
+    transform: translateX(calc(-100% + var(--sliver-width))) !important;
+    box-shadow: 8px 0 32px rgba(0, 0, 0, 0.45);
     padding: 60px 24px 40px;
     z-index: 200;
   }
 
   /* When open: slides onto the whole screen */
-  .sidebar.open {
+  .sidebar.open,
+  .sidebar.fullscreen {
     transform: translateX(0) !important;
   }
 
   /* The handle is the sliver itself on mobile */
-  .sidebar-drag-handle {
+  .sidebar-handle {
     display: flex !important;
     width: var(--sliver-width) !important;
     background: var(--bg-surface);
-    border-left: 2px solid var(--accent);
-    box-shadow: -4px 0 16px rgba(0, 201, 167, 0.25);
+    border-right: 2px solid var(--accent);
+    box-shadow: 4px 0 16px rgba(0, 201, 167, 0.25);
     cursor: pointer;
-    animation: sliverPulse 3s ease-in-out infinite;
+    animation: sliverPulseLeft 3s ease-in-out infinite;
   }
 
-  .sidebar-drag-handle::after {
-    display: none !important;
-  }
-
-  .sliver-pill {
-    display: flex !important;
-  }
-
-  .sidebar-drag-handle:hover,
-  .sidebar-drag-handle:active,
-  .sidebar-drag-handle.active {
-    width: var(--sliver-width) !important;
-    background: var(--bg-surface);
-    border-left-color: var(--accent-light);
-    box-shadow: -6px 0 20px rgba(94, 234, 212, 0.4);
-  }
-
-  .sidebar.open .sidebar-drag-handle {
+  .sidebar.open .sidebar-handle,
+  .sidebar.fullscreen .sidebar-handle {
     animation: none;
-    border-left-color: rgba(0, 201, 167, 0.25);
+    border-right-color: rgba(0, 201, 167, 0.25);
     box-shadow: none;
   }
 
   /* Always show close button on mobile when open */
-  .sidebar.open .sidebar-close {
+  .sidebar.open .sidebar-close,
+  .sidebar.fullscreen .sidebar-close {
     display: flex !important;
   }
 
@@ -799,7 +778,7 @@ body.sidebar-resizing {
 @media (max-width: 767px) {
   .top-bar {
     padding: 10px 16px;
-    padding-right: calc(var(--sliver-width) + 12px);
+    padding-left: calc(var(--sliver-width) + 12px);
     gap: 8px;
   }
   .hero-section { padding: 24px 16px 12px; }

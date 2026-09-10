@@ -1,28 +1,28 @@
 /* ============================================
    DMlabs Portfolio — 3D Icosahedron
-   Built with Three.js
+   Full 3D rotation (up, down, left, right) with inertia
    ============================================ */
 
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // --- Theme Colors ---
 const THEME_COLORS = {
   dark: {
     faceColor: 0x00c9a7,
     edgeColor: 0xa7f3d0,
-    ambientIntensity: 0.35,
-    dirIntensity: 1.0,
+    ambientIntensity: 0.4,
+    dir1Intensity: 1.0,
+    dir2Intensity: 0.45,
   },
   light: {
     faceColor: 0x0d9488,
     edgeColor: 0x134e4a,
-    ambientIntensity: 0.5,
-    dirIntensity: 0.9,
+    ambientIntensity: 0.55,
+    dir1Intensity: 0.9,
+    dir2Intensity: 0.35,
   },
 };
 
-// --- Main Init ---
 function initIcosahedron() {
   const container = document.getElementById('canvas-container');
   if (!container) return;
@@ -37,7 +37,8 @@ function initIcosahedron() {
     0.1,
     100
   );
-  camera.position.set(0, 2.2, 4.5);
+  camera.position.set(0, 0.8, 4.2);
+  camera.lookAt(0, 0, 0);
 
   // Renderer
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -48,29 +49,30 @@ function initIcosahedron() {
   container.appendChild(renderer.domElement);
 
   // Lights
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
   scene.add(ambientLight);
 
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
-  dirLight.position.set(4, 6, 4);
-  scene.add(dirLight);
+  // Key light from top-front
+  const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.0);
+  dirLight1.position.set(4, 6, 4);
+  scene.add(dirLight1);
 
-  const fillLight = new THREE.DirectionalLight(0x5eead4, 0.3);
-  fillLight.position.set(-3, -2, -2);
-  scene.add(fillLight);
+  // Fill light from bottom-back to illuminate when rotated upside down
+  const dirLight2 = new THREE.DirectionalLight(0x5eead4, 0.45);
+  dirLight2.position.set(-4, -5, -3);
+  scene.add(dirLight2);
 
-  // --- Icosahedron Geometry (built-in Three.js) ---
-  // radius=1.5, detail=0 gives the standard 20-face icosahedron
+  // --- Icosahedron Geometry ---
   const icoGeometry = new THREE.IcosahedronGeometry(1.5, 0);
 
-  // Face material — solid colored with flat shading
+  // Face material — flat shaded solid faces
   const faceMaterial = new THREE.MeshPhongMaterial({
     color: 0x00c9a7,
     flatShading: true,
     shininess: 60,
     specular: new THREE.Color(0x333333),
     transparent: true,
-    opacity: 0.88,
+    opacity: 0.9,
     side: THREE.DoubleSide,
   });
 
@@ -80,28 +82,92 @@ function initIcosahedron() {
   const edgesGeometry = new THREE.EdgesGeometry(icoGeometry);
   const edgeMaterial = new THREE.LineBasicMaterial({
     color: 0xa7f3d0,
-    linewidth: 1,
+    linewidth: 1.5,
     transparent: true,
-    opacity: 0.9,
+    opacity: 0.95,
   });
   const edgeLines = new THREE.LineSegments(edgesGeometry, edgeMaterial);
 
-  // Group them together
+  // Main 3D group
   const group = new THREE.Group();
   group.add(faceMesh);
   group.add(edgeLines);
   scene.add(group);
 
-  // Controls
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
-  controls.enableZoom = false;
-  controls.enablePan = false;
-  controls.autoRotate = true;
-  controls.autoRotateSpeed = 1.5;
-  controls.minPolarAngle = Math.PI * 0.2;
-  controls.maxPolarAngle = Math.PI * 0.8;
+  // --- Free 3D Rotation Controls (Up, Down, Left, Right) ---
+  let isDragging = false;
+  let prevPointerX = 0;
+  let prevPointerY = 0;
+  let velX = 0; // horizontal rotation velocity (around Y axis)
+  let velY = 0; // vertical rotation velocity (around X axis)
+  let lastMoveTime = performance.now();
+
+  const dom = renderer.domElement;
+
+  function onPointerDown(e) {
+    if (e.button !== undefined && e.button !== 0) return;
+    isDragging = true;
+    prevPointerX = e.clientX;
+    prevPointerY = e.clientY;
+    velX = 0;
+    velY = 0;
+    lastMoveTime = performance.now();
+
+    try {
+      dom.setPointerCapture(e.pointerId);
+    } catch (_) {}
+
+    e.preventDefault();
+  }
+
+  function onPointerMove(e) {
+    if (!isDragging) return;
+
+    const currentX = e.clientX;
+    const currentY = e.clientY;
+    const deltaX = currentX - prevPointerX;
+    const deltaY = currentY - prevPointerY;
+    const now = performance.now();
+    const dt = Math.max(1, now - lastMoveTime);
+
+    prevPointerX = currentX;
+    prevPointerY = currentY;
+    lastMoveTime = now;
+
+    // Rotation sensitivity
+    const ROTATION_SPEED = 0.007;
+    const stepX = deltaX * ROTATION_SPEED;
+    const stepY = deltaY * ROTATION_SPEED;
+
+    // Calculate velocity for inertia release
+    velX = (stepX / dt) * 16;
+    velY = (stepY / dt) * 16;
+
+    // Apply rotation on world axes:
+    // deltaX (horizontal drag) rotates around world Y axis (left-right)
+    // deltaY (vertical drag) rotates around world X axis (up-down)
+    const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), stepX);
+    const qX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), stepY);
+    group.quaternion.premultiply(qY).premultiply(qX);
+  }
+
+  function onPointerUp(e) {
+    if (!isDragging) return;
+    isDragging = false;
+
+    // Clamp velocity to reasonable limit
+    velX = Math.max(-0.08, Math.min(0.08, velX));
+    velY = Math.max(-0.08, Math.min(0.08, velY));
+
+    try {
+      dom.releasePointerCapture(e.pointerId);
+    } catch (_) {}
+  }
+
+  dom.addEventListener('pointerdown', onPointerDown);
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('pointercancel', onPointerUp);
 
   // --- Theme Handling ---
   function applyTheme(theme) {
@@ -109,25 +175,24 @@ function initIcosahedron() {
     faceMaterial.color.setHex(tc.faceColor);
     edgeMaterial.color.setHex(tc.edgeColor);
     ambientLight.intensity = tc.ambientIntensity;
-    dirLight.intensity = tc.dirIntensity;
+    dirLight1.intensity = tc.dir1Intensity;
+    dirLight2.intensity = tc.dir2Intensity;
   }
 
-  // Listen for theme changes from script.js
   document.addEventListener('themechange', (e) => {
     applyTheme(e.detail.theme);
   });
 
-  // Apply initial theme
   const initialTheme = document.documentElement.getAttribute('data-theme') || 'dark';
   applyTheme(initialTheme);
 
-  // --- Floating Animation ---
+  // --- Floating & Resize ---
   let floatTime = 0;
 
-  // --- Resize ---
   function onResize() {
     const w = container.clientWidth;
     const h = container.clientHeight;
+    if (w === 0 || h === 0) return;
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
@@ -135,22 +200,37 @@ function initIcosahedron() {
 
   window.addEventListener('resize', onResize);
 
-  // --- Animate ---
+  // --- Animation Loop ---
   function animate() {
     requestAnimationFrame(animate);
 
-    // Subtle floating motion
+    // Subtle vertical floating motion
     floatTime += 0.012;
-    group.position.y = Math.sin(floatTime) * 0.08;
+    group.position.y = Math.sin(floatTime) * 0.07;
 
-    controls.update();
+    // Handle rotation physics when not dragging
+    if (!isDragging) {
+      // If there's inertia from a swipe/drag (horizontal or vertical)
+      if (Math.abs(velX) > 0.0001 || Math.abs(velY) > 0.0001) {
+        velX *= 0.94; // damping
+        velY *= 0.94; // damping
+
+        const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), velX);
+        const qX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), velY);
+        group.quaternion.premultiply(qY).premultiply(qX);
+      } else {
+        // Gentle default auto-rotation (yaw + slight tilt)
+        const qAuto = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.006);
+        group.quaternion.premultiply(qAuto);
+      }
+    }
+
     renderer.render(scene, camera);
   }
 
   animate();
 }
 
-// Init when DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initIcosahedron);
 } else {
