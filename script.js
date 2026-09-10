@@ -37,26 +37,59 @@ document.addEventListener('DOMContentLoaded', () => {
     setTheme(current === 'dark' ? 'light' : 'dark');
   });
 
-  // --- Search Filtering ---
+  // --- Search & Category Filtering ---
   const searchInput = document.getElementById('search-input');
   const projectCards = document.querySelectorAll('.project-card');
   const noResults = document.getElementById('no-results');
+  const filterBtns = document.querySelectorAll('.filter-btn');
+
+  let activeCategory = "all";
+
+  function applyProjectFilters() {
+    const query = searchInput ? searchInput.value.toLowerCase().trim() : "";
+    let visibleCount = 0;
+
+    projectCards.forEach(card => {
+      const category = card.getAttribute("data-category") || "";
+      const matchesCat = (activeCategory === "all" || category === activeCategory);
+
+      if (!matchesCat) {
+        card.classList.add("hidden");
+        return;
+      }
+
+      const title = card.querySelector(".card-title")?.textContent.toLowerCase() || "";
+      const desc = card.querySelector(".card-desc")?.textContent.toLowerCase() || "";
+      const badge = card.querySelector(".card-badge")?.textContent.toLowerCase() || "";
+      const tags = Array.from(card.querySelectorAll(".tag-pill")).map(p => p.textContent.toLowerCase()).join(" ");
+
+      const matchesQuery = !query || title.includes(query) || desc.includes(query) || badge.includes(query) || tags.includes(query);
+
+      card.classList.toggle("hidden", !matchesQuery);
+      if (matchesQuery) visibleCount++;
+    });
+
+    if (noResults) {
+      noResults.classList.toggle("visible", visibleCount === 0);
+    }
+  }
 
   if (searchInput) {
-    searchInput.addEventListener('input', () => {
-      const query = searchInput.value.toLowerCase().trim();
-      let visibleCount = 0;
+    searchInput.addEventListener('input', applyProjectFilters);
+  }
 
-      projectCards.forEach(card => {
-        const title = card.querySelector('.card-title')?.textContent.toLowerCase() || '';
-        const desc = card.querySelector('.card-desc')?.textContent.toLowerCase() || '';
-        const matches = !query || title.includes(query) || desc.includes(query);
-
-        card.classList.toggle('hidden', !matches);
-        if (matches) visibleCount++;
+  if (filterBtns.length > 0) {
+    filterBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        filterBtns.forEach(b => {
+          b.classList.remove('active');
+          b.setAttribute('aria-selected', 'false');
+        });
+        btn.classList.add('active');
+        btn.setAttribute('aria-selected', 'true');
+        activeCategory = btn.getAttribute('data-category') || 'all';
+        applyProjectFilters();
       });
-
-      noResults.classList.toggle('visible', visibleCount === 0);
     });
   }
 
@@ -154,7 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Nav links close fullscreen on small screen
-  sidebar.querySelectorAll('.sidebar-nav a').forEach(link => {
+  sidebar.querySelectorAll('.sidebar-nav a, .brand-name a, .brand-logo-link').forEach(link => {
     link.addEventListener('click', () => {
       if (isSmallScreen() && isFullscreen) {
         exitFullscreen();
