@@ -45,27 +45,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let activeCategory = "all";
 
+  // Cache card text at startup to avoid DOM reads on every keystroke
+  const cardDataCache = Array.from(projectCards).map(card => ({
+    el: card,
+    category: card.getAttribute("data-category") || "",
+    text: [
+      card.querySelector(".card-title")?.textContent || "",
+      card.querySelector(".card-desc")?.textContent || "",
+      card.querySelector(".card-badge")?.textContent || "",
+      Array.from(card.querySelectorAll(".tag-pill")).map(p => p.textContent).join(" ")
+    ].join(" ").toLowerCase()
+  }));
+
   function applyProjectFilters() {
     const query = searchInput ? searchInput.value.toLowerCase().trim() : "";
     let visibleCount = 0;
 
-    projectCards.forEach(card => {
-      const category = card.getAttribute("data-category") || "";
+    cardDataCache.forEach(({ el, category, text }) => {
       const matchesCat = (activeCategory === "all" || category === activeCategory);
 
       if (!matchesCat) {
-        card.classList.add("hidden");
+        el.classList.add("hidden");
         return;
       }
 
-      const title = card.querySelector(".card-title")?.textContent.toLowerCase() || "";
-      const desc = card.querySelector(".card-desc")?.textContent.toLowerCase() || "";
-      const badge = card.querySelector(".card-badge")?.textContent.toLowerCase() || "";
-      const tags = Array.from(card.querySelectorAll(".tag-pill")).map(p => p.textContent.toLowerCase()).join(" ");
+      const matchesQuery = !query || text.includes(query);
 
-      const matchesQuery = !query || title.includes(query) || desc.includes(query) || badge.includes(query) || tags.includes(query);
-
-      card.classList.toggle("hidden", !matchesQuery);
+      el.classList.toggle("hidden", !matchesQuery);
       if (matchesQuery) visibleCount++;
     });
 
@@ -74,8 +80,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Debounce search input to avoid filtering on every keystroke
+  let searchTimeout = null;
   if (searchInput) {
-    searchInput.addEventListener('input', applyProjectFilters);
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(applyProjectFilters, 150);
+    });
   }
 
   if (filterBtns.length > 0) {
@@ -153,12 +164,6 @@ document.addEventListener('DOMContentLoaded', () => {
       sidebarInner.style.opacity = Math.max(0.1, progress).toFixed(3);
     }
 
-    // When dragging small sidebar on desktop, dynamically expand main content margin
-    if (!isSmallScreen() && mainContent && getSidebarState() !== 'fullscreen') {
-      const dynamicMargin = Math.max(SLIVER_WIDTH, totalWidth + clampedX);
-      mainContent.style.marginLeft = `${dynamicMargin}px`;
-    }
-
     // Backdrop opacity for fullscreen or mobile
     if (sidebarOverlay) {
       if (getSidebarState() === 'fullscreen' || isSmallScreen()) {
@@ -179,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
       sidebarInner.style.transform = '';
       sidebarInner.style.opacity = '';
     }
-    if (mainContent) mainContent.style.marginLeft = '';
+
   }
 
   function setSidebarState(targetState) {
@@ -228,7 +233,6 @@ document.addEventListener('DOMContentLoaded', () => {
         sidebarHandle.setAttribute('aria-label', 'Expand sidebar');
       }
     }
-    window.dispatchEvent(new Event('resize'));
   }
 
   function toggleSidebar() {
@@ -319,9 +323,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const currentW = startWidth + currentDelta;
         sidebar.style.width = `${currentW}px`;
         sidebar.style.boxShadow = '14px 0 50px rgba(0, 0, 0, 0.65)';
-        if (!isSmallScreen() && mainContent) {
-          mainContent.style.marginLeft = `${currentW}px`;
-        }
         if (sidebarOverlay && maxDelta > 0) {
           sidebarOverlay.classList.add('active');
           sidebarOverlay.style.opacity = Math.max(0, Math.min(1, currentDelta / maxDelta)).toFixed(3);
@@ -410,32 +411,34 @@ document.addEventListener('DOMContentLoaded', () => {
     onGestureEnd(e.clientX, e.clientY);
   });
 
-  // Touch Event Listeners (Guaranteed mobile compatibility)
-  if (sidebar) {
-    sidebar.addEventListener('touchstart', (e) => {
+  // Touch Event Listeners (fallback for browsers without PointerEvent support)
+  if (!window.PointerEvent) {
+    if (sidebar) {
+      sidebar.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        onGestureStart(e.touches[0].clientX, e.touches[0].clientY);
+      }, { passive: true });
+    }
+
+    document.addEventListener('touchstart', (e) => {
       if (e.touches.length !== 1) return;
-      onGestureStart(e.touches[0].clientX, e.touches[0].clientY);
+      if (getSidebarState() === 'minimized' && e.touches[0].clientX <= SLIVER_WIDTH + 36) {
+        onGestureStart(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (e) => {
+      if (e.touches.length !== 1) return;
+      onGestureMove(e.touches[0].clientX, e.touches[0].clientY, e);
+    }, { passive: false });
+
+    window.addEventListener('touchend', (e) => {
+      if (e.changedTouches.length) {
+        const touch = e.changedTouches[0];
+        onGestureEnd(touch.clientX, touch.clientY);
+      }
     }, { passive: true });
   }
-
-  document.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1) return;
-    if (getSidebarState() === 'minimized' && e.touches[0].clientX <= SLIVER_WIDTH + 36) {
-      onGestureStart(e.touches[0].clientX, e.touches[0].clientY);
-    }
-  }, { passive: true });
-
-  window.addEventListener('touchmove', (e) => {
-    if (e.touches.length !== 1) return;
-    onGestureMove(e.touches[0].clientX, e.touches[0].clientY, e);
-  }, { passive: false });
-
-  window.addEventListener('touchend', (e) => {
-    if (e.changedTouches.length) {
-      const touch = e.changedTouches[0];
-      onGestureEnd(touch.clientX, touch.clientY);
-    }
-  }, { passive: true });
 
   // Suppress accidental click navigation on links if user was dragging
   if (sidebar) {

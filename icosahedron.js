@@ -94,6 +94,12 @@ function initIcosahedron() {
   group.add(edgeLines);
   scene.add(group);
 
+  // Pre-allocated objects to avoid per-frame GC pressure
+  const _axisY = new THREE.Vector3(0, 1, 0);
+  const _axisX = new THREE.Vector3(1, 0, 0);
+  const _quatA = new THREE.Quaternion();
+  const _quatB = new THREE.Quaternion();
+
   // --- Free 3D Rotation Controls (Up, Down, Left, Right) ---
   let isDragging = false;
   let prevPointerX = 0;
@@ -143,12 +149,12 @@ function initIcosahedron() {
     velX = (stepX / dt) * 16;
     velY = (stepY / dt) * 16;
 
-    // Apply rotation on world axes:
+    // Apply rotation on world axes (reuse pre-allocated objects):
     // deltaX (horizontal drag) rotates around world Y axis (left-right)
     // deltaY (vertical drag) rotates around world X axis (up-down)
-    const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), stepX);
-    const qX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), stepY);
-    group.quaternion.premultiply(qY).premultiply(qX);
+    _quatA.setFromAxisAngle(_axisY, stepX);
+    _quatB.setFromAxisAngle(_axisX, stepY);
+    group.quaternion.premultiply(_quatA).premultiply(_quatB);
   }
 
   function onPointerUp(e) {
@@ -200,9 +206,20 @@ function initIcosahedron() {
 
   window.addEventListener('resize', onResize);
 
+  // --- Visibility Gating: skip rendering when canvas is off-screen ---
+  let isCanvasVisible = true;
+  const visibilityObserver = new IntersectionObserver(
+    ([entry]) => { isCanvasVisible = entry.isIntersecting; },
+    { threshold: 0 }
+  );
+  visibilityObserver.observe(container);
+
   // --- Animation Loop ---
   function animate() {
     requestAnimationFrame(animate);
+
+    // Skip rendering when the canvas is scrolled out of view
+    if (!isCanvasVisible) return;
 
     // Subtle vertical floating motion
     floatTime += 0.012;
@@ -215,13 +232,13 @@ function initIcosahedron() {
         velX *= 0.94; // damping
         velY *= 0.94; // damping
 
-        const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), velX);
-        const qX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), velY);
-        group.quaternion.premultiply(qY).premultiply(qX);
+        _quatA.setFromAxisAngle(_axisY, velX);
+        _quatB.setFromAxisAngle(_axisX, velY);
+        group.quaternion.premultiply(_quatA).premultiply(_quatB);
       } else {
         // Gentle default auto-rotation (yaw + slight tilt)
-        const qAuto = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.006);
-        group.quaternion.premultiply(qAuto);
+        _quatA.setFromAxisAngle(_axisY, 0.006);
+        group.quaternion.premultiply(_quatA);
       }
     }
 
